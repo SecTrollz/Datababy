@@ -5,28 +5,50 @@ an outbound connection to your own cloud VM, which then proxies traffic on
 its behalf. No inbound ports or public IP are needed on the Android side.
 
 ```
-Android (Termux)                     Cloud VM (Azure/any VPS)
+Android (Termux)                     Cloud VM (Azure / Oracle Free Tier)
 ┌─────────────┐   outbound TCP:7000  ┌─────────────┐
 │ frpc         │ ───────────────────▶│ frps         │──▶ internet
 │ SOCKS5:1080  │◀─────────────────── │ token auth   │
 └─────────────┘   persistent tunnel  └─────────────┘
 ```
 
+Both ends of the tunnel are pluggable:
+
+- **Cloud VM**: Azure (paid, or 12-month free tier) or **Oracle Cloud Always
+  Free** (free indefinitely — see `oracle/`).
+- **Connectivity**: either a direct IP:port connection, or routed through a
+  **Cloudflare Tunnel** (free tier) so the VM needs no open inbound port at
+  all — see `cloudflare/`.
+
 ## Contents
 
 - `azure/setup-azure-frps.sh` — provisions an Ubuntu VM on Azure, installs
   [frp](https://github.com/fatedier/frp)'s server (`frps`) as a systemd
   service, and generates a random auth token + dashboard password.
+- `oracle/setup-oracle-frps.sh` — the same, but provisions an **Oracle Cloud
+  Always Free** VM (VCN, subnet, security list, instance) via the OCI CLI
+  instead of Azure. No recurring cost.
+- `cloudflare/setup-cloudflare-tunnel.sh` — run on either VM above to publish
+  frps through a free Cloudflare Tunnel instead of opening a public inbound
+  port for it.
 - `termux/setup-termux-frpc.sh` — installs frp's client (`frpc`) in Termux,
   writes `frpc.toml`, and keeps it running via `tmux` + a cron watchdog +
-  Termux:Boot autostart.
+  Termux:Boot autostart. Connects directly to the VM's public IP.
+- `termux/setup-termux-cloudflared-client.sh` — same, but connects through a
+  Cloudflare Tunnel hostname instead of a raw IP (pairs with
+  `cloudflare/setup-cloudflare-tunnel.sh`).
 
 ## Usage
 
-1. On a machine with the Azure CLI installed and `az login` already run:
+### Option A: direct IP, Azure or Oracle
+
+1. Provision the server:
 
    ```bash
-   ./azure/setup-azure-frps.sh
+   ./azure/setup-azure-frps.sh      # needs `az login` first
+   # or
+   ./oracle/setup-oracle-frps.sh    # needs `oci setup config` first, and
+                                     # COMPARTMENT_ID set in the script
    ```
 
    This prints the VM's public IP and a generated auth token — save both.
@@ -42,6 +64,30 @@ Android (Termux)                     Cloud VM (Azure/any VPS)
 
 3. Point an app or browser's SOCKS5 proxy setting at `127.0.0.1:1080`.
 
+### Option B: no open inbound port, via Cloudflare Tunnel
+
+1. Provision the server as in Option A (Azure or Oracle).
+2. On the VM, publish frps through a Cloudflare Tunnel (requires a domain
+   already added to a free Cloudflare account):
+
+   ```bash
+   ./cloudflare/setup-cloudflare-tunnel.sh frp-tunnel frp.yourdomain.com
+   ```
+
+   This step includes an interactive browser login and DNS routing step by
+   design — see the comments in the script. Once it's running, remove the
+   NSG/security-list rule for port 7000 (and consider rebinding `frps`'s
+   `bindAddr` to `127.0.0.1` in `/etc/frp/frps.toml` on the VM) since the
+   tunnel no longer needs a public port.
+
+3. In Termux:
+
+   ```bash
+   ./termux/setup-termux-cloudflared-client.sh frp.yourdomain.com <auth_token>
+   ```
+
+4. Point an app or browser's SOCKS5 proxy setting at `127.0.0.1:1080`.
+
 ## What this does *not* do
 
 These scripts set up the tunnel and a local SOCKS5 endpoint only. Making
@@ -53,13 +99,13 @@ root.
 
 ## Notes
 
-- **Cost**: an always-on VM is not free. Azure's free tier (12 months, B1s)
-  or a one-time-cost/always-free VPS (e.g. Oracle Cloud's free tier) avoids
-  recurring charges; a paid `Standard_B1s` runs roughly $4-5/month.
-- **Security**: keep `frpc.toml`'s auth token secret (the script chmods it
+- **Cost**: Oracle Cloud's Always Free tier (`oracle/`) and Cloudflare
+  Tunnel's free tier (`cloudflare/`) together give a genuinely $0/month
+  setup. Azure's free tier covers 12 months; a paid `Standard_B1s` runs
+  roughly $4-5/month after that.
+- **Security**: keep `frpc.toml`'s auth token secret (the scripts chmod it
   `600`); the frps dashboard is bound to `127.0.0.1` on the VM and reachable
   only via an SSH tunnel, not exposed publicly.
-- **Alternatives**: [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-  (no VPS to manage) and WireGuard are viable alternatives to frp for the
-  same outbound-only tunnel pattern, with different tradeoffs — see the
-  comparison in project history/commit messages for details.
+- **Alternatives**: WireGuard is a viable alternative to frp for the same
+  outbound-only tunnel pattern, with different tradeoffs (full IP-layer VPN
+  vs. a SOCKS5 proxy).
