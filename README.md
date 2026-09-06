@@ -88,6 +88,12 @@ Both ends of the tunnel are pluggable:
 
 4. Point an app or browser's SOCKS5 proxy setting at `127.0.0.1:1080`.
 
+   If `cloudflared access tcp` refuses the connection, the hostname's TCP
+   ingress may need a Cloudflare Access self-hosted application/policy
+   (Zero Trust → Access → Applications) in addition to the tunnel route —
+   this varies by account and isn't scripted here since it's a one-time,
+   account-specific setup step in the Cloudflare dashboard.
+
 ## What this does *not* do
 
 These scripts set up the tunnel and a local SOCKS5 endpoint only. Making

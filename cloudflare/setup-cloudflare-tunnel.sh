@@ -32,11 +32,14 @@ rm -f /tmp/cloudflared.deb
 echo "[2/5] Cloudflare login (opens a URL — open it in a browser and authorize this tunnel)..."
 cloudflared tunnel login
 
+command -v jq >/dev/null || { sudo apt-get update -y && sudo apt-get install -y jq; }
+
 echo "[3/5] Creating tunnel '$TUNNEL_NAME'..."
-if ! cloudflared tunnel list -o json 2>/dev/null | grep -q "\"name\":\"$TUNNEL_NAME\""; then
+TUNNEL_ID=$(cloudflared tunnel list -o json | jq -r --arg name "$TUNNEL_NAME" '.[] | select(.name == $name) | .id' | head -1)
+if [ -z "$TUNNEL_ID" ]; then
     cloudflared tunnel create "$TUNNEL_NAME"
+    TUNNEL_ID=$(cloudflared tunnel list -o json | jq -r --arg name "$TUNNEL_NAME" '.[] | select(.name == $name) | .id' | head -1)
 fi
-TUNNEL_ID=$(cloudflared tunnel list -o json | python3 -c "import json,sys; print([t['id'] for t in json.load(sys.stdin) if t['name']=='$TUNNEL_NAME'][0])")
 CRED_FILE=$(find "$HOME/.cloudflared" -name "${TUNNEL_ID}.json" | head -1)
 
 echo "[4/5] Writing config and routing DNS..."

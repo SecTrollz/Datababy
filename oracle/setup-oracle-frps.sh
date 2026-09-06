@@ -127,12 +127,20 @@ echo "Instance public IP: $PUBLIC_IP"
 
 echo "[8/8] Deploying FRPS via SSH..."
 # Wait for SSH to come up
-for i in $(seq 1 30); do
+SSH_READY=false
+for _ in $(seq 1 30); do
     if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 "$ADMIN_USER@$PUBLIC_IP" true 2>/dev/null; then
+        SSH_READY=true
         break
     fi
     sleep 5
 done
+if [ "$SSH_READY" != true ]; then
+    echo "ERROR: SSH did not become reachable at $ADMIN_USER@$PUBLIC_IP after 150s."
+    echo "The instance may still be booting — retry manually once it's up:"
+    echo "  ssh $ADMIN_USER@$PUBLIC_IP"
+    exit 1
+fi
 
 # shellcheck disable=SC2087
 ssh -o StrictHostKeyChecking=accept-new "$ADMIN_USER@$PUBLIC_IP" bash -s -- "$FRP_VERSION" "$FRP_TOKEN" "$DASHBOARD_PASSWORD" <<'ENDSSH'
